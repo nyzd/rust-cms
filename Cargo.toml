@@ -1,0 +1,19 @@
+[package]
+name = "abedi-blog"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [".", "entity", "migration", "api"]
+
+[dependencies]
+entity = { path = "entity" }
+auth = {path = "auth"}
+migration = { path = "migration" }
+actix-web = "4"
+dotenvy = "0.15"
+async-trait = "0.1.68"
+
+[dependencies.sea-orm]
+version = "^0"
+features = [ "sqlx-postgres", "runtime-actix-native-tls", "macros" ]
