@@ -7,6 +7,9 @@ pub struct Model {
     pub id: i32,
     pub email: String,
     pub verification_hash: String,
+    pub expired: bool,
+    pub created_at: DateTime,
+    //pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -1,8 +1,8 @@
 use crate::error::router_error::RouterError;
 use actix_web::web;
-use entity::email_verification::{self, ActiveModel as EmailVerificationModel, Entity as EmailVerificationEntitiy};
+use entity::email_verification::{ActiveModel as EmailVerificationModel, Entity as EmailVerificationEntitiy};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, InsertResult};
+use sea_orm::{DatabaseConnection, EntityTrait};
 use hash::{random_bytes, hash_bytes};
 use serde::Deserialize;
 
@@ -13,8 +13,7 @@ pub async fn create_verification_url_debug(
     user_email: String
 ) -> Result<String, String> {
     // Create the new verification code with email
-    // TODO: expire the last verification code if exists
-    //
+    
     // Hash the random bytes
     let r_bytes = random_bytes();
     let hash = hash_bytes(r_bytes);
@@ -22,15 +21,17 @@ pub async fn create_verification_url_debug(
     let new_verification = EmailVerificationModel {
         email: Set(user_email),
         verification_hash: Set(hash.clone()),
+        expired: Set(false),
         ..Default::default()
     };
 
-    let res: InsertResult<EmailVerificationModel> = EmailVerificationEntitiy::insert(new_verification)
+    let Ok(_res) = EmailVerificationEntitiy::insert(new_verification)
         .exec(db_conn)
-        .await
-        .unwrap();
+        .await else {
+            return Err("Cant insert the new verification".to_string());
+        };
 
-    Ok(format!("/verify?code={}", hash))
+    Ok(format!("/verify/{}", hash))
 }
 
 #[derive(Deserialize)]

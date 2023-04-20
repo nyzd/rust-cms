@@ -5,7 +5,7 @@ mod core_routers;
 mod error;
 mod middlewares;
 
-use core_routers::account::{signin, send_verification};
+use core_routers::account::{verify, send_verification};
 
 use actix_web::{web, App, HttpServer};
 use dotenvy::dotenv;
@@ -40,7 +40,7 @@ async fn main() -> io::Result<()> {
             .app_data(web::Data::new(database_conn.clone()))
             .service(
                 web::scope("/account")
-                     .route("/signin", web::post().to(signin::signin))
+                     .route("/verify/{hash}", web::get().to(verify::verify))
                      .route("/send_verification", web::post().to(send_verification::send_verification_email))
             )
         )

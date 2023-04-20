@@ -20,6 +20,17 @@ impl MigrationTrait for Migration {
                     )
                     .col(ColumnDef::new(EmailVerification::Email).string().not_null())
                     .col(ColumnDef::new(EmailVerification::VerificationHash).string().not_null())
+                    .col(ColumnDef::new(EmailVerification::Expired).boolean().not_null())
+                    .col(
+                        ColumnDef::new(EmailVerification::CreatedAt)
+                            .timestamp()
+                            .extra("DEFAULT CURRENT_TIMESTAMP".to_owned()),
+                    )
+                    //.col(
+                    //    ColumnDef::new(Item::UpdatedAt)
+                    //        .timestamp()
+                    //        .extra("DEFAULT CURRENT_TIMESTAMP".to_owned()),
+                    //)
                     .to_owned(),
             )
             .await
@@ -38,4 +49,7 @@ enum EmailVerification {
     Id,
     Email,
     VerificationHash,
+    Expired,
+    CreatedAt,
+    //UpdatedAt,
 }
