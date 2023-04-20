@@ -1,7 +1,11 @@
 use std::env;
 use std::io;
 
+mod core_routers;
+mod error;
 mod middlewares;
+
+use core_routers::account::{signin, send_verification};
 
 use actix_web::{web, App, HttpServer};
 use dotenvy::dotenv;
@@ -31,7 +35,15 @@ async fn main() -> io::Result<()> {
 
     let token_checker_obj = TokenValidator::new(database_conn.clone());
 
-    HttpServer::new(move || App::new().app_data(web::Data::new(database_conn.clone())))
+    HttpServer::new(move || 
+            App::new()
+            .app_data(web::Data::new(database_conn.clone()))
+            .service(
+                web::scope("/account")
+                     .route("/signin", web::post().to(signin::signin))
+                     .route("/send_verification", web::post().to(send_verification::send_verification_email))
+            )
+        )
         .bind(("127.0.0.1", 8080))?
         .run()
         .await
