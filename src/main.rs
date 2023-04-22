@@ -7,7 +7,7 @@ mod middlewares;
 
 use core_routers::account::{verify, send_verification};
 
-use actix_web::{web, App, HttpServer};
+use actix_web::{web, App, HttpServer, dev::ServiceRequest, Error};
 use dotenvy::dotenv;
 use middlewares::token_checker::TokenValidator;
 use migration::{Migrator, MigratorTrait};
@@ -32,8 +32,6 @@ async fn main() -> io::Result<()> {
     Migrator::up(&database_conn, None)
         .await
         .expect("Cant run the migrations");
-
-    let token_checker_obj = TokenValidator::new(database_conn.clone());
 
     HttpServer::new(move || 
             App::new()

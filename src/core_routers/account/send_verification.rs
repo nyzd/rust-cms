@@ -52,6 +52,8 @@ pub async fn send_verification_email(
     let url = if cfg!(debug_assertions) {
         create_verification_url_debug(db_conn.get_ref(), user_info.email).await.unwrap()
     } else {
+        // TODO send email
+        // before that check the last time we sent the email
         String::from("cant")
     };
 

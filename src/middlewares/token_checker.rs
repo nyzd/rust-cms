@@ -15,9 +15,15 @@ impl TokenValidator {
     }
 }
 
+
+struct AuthResult {
+    user_id: u32,
+    permissions: Vec<String>,
+}
+
 #[async_trait]
-impl TokenChecker for TokenValidator {
-    async fn get_user_id(&self, request_token: &str) -> Option<u32> {
+impl TokenChecker<AuthResult> for TokenValidator {
+    async fn get_user_id(&self, request_token: &str) -> Option<AuthResult> {
         let token_bytes = request_token.bytes().collect::<Vec<u8>>();
 
         // Hash the request token
@@ -31,6 +37,11 @@ impl TokenChecker for TokenValidator {
                 return None;
             };
 
-        Some(token.user_id as u32)
+        // Now get the permissions that user have
+
+        Some(AuthResult {
+            user_id: token.user_id as u32,
+            permissions: vec![]
+        })
     }
 }
