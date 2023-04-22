@@ -8,9 +8,13 @@ use actix_web::{
 };
 use async_trait::async_trait;
 use futures_util::future::LocalBoxFuture;
+use std::marker::PhantomData;
 
 #[async_trait]
-pub trait TokenChecker {
+pub trait TokenChecker<T>
+where
+    T: Sized
+{
     /// This function will return option
     /// if the request token valid return
     /// Some with sized data to pass to the router
@@ -18,7 +22,7 @@ pub trait TokenChecker {
     /// Unauthorized
     ///
     /// This function returns the verifyed user ID
-    async fn get_user_id(&self, request_token: &str) -> Option<u32>
+    async fn get_user_id(&self, request_token: &str) -> Option<T>
     where
         Self: Sized;
 }
@@ -29,52 +33,63 @@ pub trait TokenChecker {
 // 2. Middleware's call method gets called with normal request.
 
 #[derive(Clone, Default)]
-pub struct TokenAuth<F>(F);
+pub struct TokenAuth<F, Type> {
+    finder: F,
+    phantom_type: PhantomData<Type>
+}
 
-impl<F> TokenAuth<F>
+impl<F, Type> TokenAuth<F, Type>
 where
-    F: TokenChecker,
+    F: TokenChecker<Type>,
+    Type: Sized
 {
     /// Construct `TokenAuth` middleware.
     pub fn new(finder: F) -> Self {
-        Self(finder)
+        Self {
+            finder,
+            phantom_type: PhantomData
+        }
     }
 }
 
 // Middleware factory is `Transform` trait from actix-service crate
 // `S` - type of the next service
 // `B` - type of response's body
-impl<S, B, F> Transform<S, ServiceRequest> for TokenAuth<F>
+impl<S, B, F, T> Transform<S, ServiceRequest> for TokenAuth<F, T>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
     S::Future: 'static,
     B: 'static,
-    F: TokenChecker + Clone + 'static,
+    F: TokenChecker<T> + Clone + 'static,
+    T: Sized + 'static
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
-    type Transform = TokenAuthMiddleware<S, F>;
+    type Transform = TokenAuthMiddleware<S, F, T>;
     type InitError = ();
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(TokenAuthMiddleware {
             service,
-            token_finder: self.0.clone(),
+            token_finder: self.finder.clone(),
+            phantom_type: PhantomData
         }))
     }
 }
 
-pub struct TokenAuthMiddleware<S, F> {
+pub struct TokenAuthMiddleware<S, F, Type> {
     service: S,
     token_finder: F,
+    phantom_type: PhantomData<Type>,
 }
 
-impl<S, B, F> Service<ServiceRequest> for TokenAuthMiddleware<S, F>
+impl<S, B, F, Type> Service<ServiceRequest> for TokenAuthMiddleware<S, F, Type>
 where
     S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
     S::Future: 'static,
-    F: TokenChecker + Clone + 'static,
+    F: TokenChecker<Type> + Clone + 'static,
+    Type: Sized + 'static
 {
     type Response = ServiceResponse<B>;
     type Error = Error;
