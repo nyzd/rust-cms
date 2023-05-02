@@ -5,11 +5,14 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
+    #[sea_orm(unique)]
+    pub uu_id: String,
     pub email: String,
+    #[sea_orm(unique)]
     pub verification_hash: String,
-    pub expired: bool,
+    pub verified: bool,
+    pub used: bool,
     pub created_at: DateTime,
-    //pub updated_at: DateTimeUtc,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
