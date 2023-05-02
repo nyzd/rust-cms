@@ -21,6 +21,10 @@ pub enum RouterError {
     /// 403 Gone
     /// token or emailverification can expire
     Expired(String),
+
+    /// 403 Gone
+    /// emailverification can expire
+    Used(String),
 }
 
 impl Display for RouterError {
@@ -29,6 +33,7 @@ impl Display for RouterError {
             Self::Auth(message) => write!(f, "{}", message),
             Self::NotFound(message) => write!(f, "{}", message),
             Self::Expired(message) => write!(f, "{}", message),
+            Self::Used(message) => write!(f, "{}", message),
             Self::InternalError => write!(f, "InternalError")
         }
     }
@@ -46,6 +51,7 @@ impl ResponseError for RouterError {
             Self::Auth(_) => StatusCode::UNAUTHORIZED,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Expired(_) => StatusCode::GONE,
+            Self::Used(_) => StatusCode::GONE,
             Self::InternalError => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
