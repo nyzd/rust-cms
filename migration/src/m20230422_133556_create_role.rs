@@ -1,4 +1,5 @@
 use sea_orm_migration::prelude::*;
+use crate::m20230418_101322_create_user_table::User;
 
 #[derive(DeriveMigrationName)]
 pub struct Migration;
@@ -19,6 +20,13 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Role::Name).string().not_null())
+                    .col(ColumnDef::new(Role::UserId).integer().not_null())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-role-user-id")
+                            .from(Role::Table, Role::UserId)
+                            .to(User::Table, User::Id),
+                    )
                     .to_owned(),
             )
             .await
@@ -35,5 +43,6 @@ impl MigrationTrait for Migration {
 pub enum Role {
     Table,
     Id,
-    Name
+    Name,
+    UserId,
 }

@@ -18,6 +18,7 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
+                    .col(ColumnDef::new(User::UUId).string().not_null())
                     .col(ColumnDef::new(User::Name).string().not_null())
                     .col(ColumnDef::new(User::Email).string().not_null())
                     .to_owned(),
@@ -36,6 +37,7 @@ impl MigrationTrait for Migration {
 pub enum User {
     Table,
     Id,
+    UUId,
     Name,
     Email,
 }

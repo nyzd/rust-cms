@@ -18,9 +18,11 @@ impl MigrationTrait for Migration {
                             .auto_increment()
                             .primary_key(),
                     )
+                    .col(ColumnDef::new(EmailVerification::UUId).string().not_null())
                     .col(ColumnDef::new(EmailVerification::Email).string().not_null())
                     .col(ColumnDef::new(EmailVerification::VerificationHash).string().not_null())
-                    .col(ColumnDef::new(EmailVerification::Expired).boolean().not_null())
+                    .col(ColumnDef::new(EmailVerification::Verified).boolean().not_null())
+                    .col(ColumnDef::new(EmailVerification::Used).boolean().not_null())
                     .col(
                         ColumnDef::new(EmailVerification::CreatedAt)
                             .timestamp()
@@ -47,9 +49,11 @@ impl MigrationTrait for Migration {
 enum EmailVerification {
     Table,
     Id,
+    UUId,
     Email,
     VerificationHash,
-    Expired,
+    Verified,
+    Used,
     CreatedAt,
     //UpdatedAt,
 }
