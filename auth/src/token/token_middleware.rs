@@ -9,6 +9,7 @@ use actix_web::{
 use async_trait::async_trait;
 use futures_util::future::LocalBoxFuture;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 #[async_trait]
 pub trait TokenChecker<T>
@@ -57,7 +58,7 @@ where
 // `B` - type of response's body
 impl<S, B, F, T> Transform<S, ServiceRequest> for TokenAuth<F, T>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     B: 'static,
     F: TokenChecker<T> + Clone + 'static,
@@ -71,7 +72,7 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ready(Ok(TokenAuthMiddleware {
-            service,
+            service: Rc::new(service),
             token_finder: self.finder.clone(),
             phantom_type: PhantomData
         }))
@@ -79,14 +80,14 @@ where
 }
 
 pub struct TokenAuthMiddleware<S, F, Type> {
-    service: S,
+    service: Rc<S>,
     token_finder: F,
     phantom_type: PhantomData<Type>,
 }
 
 impl<S, B, F, Type> Service<ServiceRequest> for TokenAuthMiddleware<S, F, Type>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     S::Future: 'static,
     F: TokenChecker<Type> + Clone + 'static,
     Type: Sized + 'static
@@ -98,7 +99,7 @@ where
     forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        let service = self.service.clone();
+        let service = Rc::clone(&self.service);
         let token_finder = self.token_finder.clone();
 
         Box::pin(async move {
