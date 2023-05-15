@@ -4,14 +4,16 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [".", "entity", "migration", "hash"]
+members = [".", "entity", "migration", "hash", "plugin_manager"]
 
 [dependencies]
+plugin_manager = { path = "plugin_manager" }
 entity = { path = "entity" }
 auth = { path = "auth" }
 hash = { path = "hash" }
 migration = { path = "migration" }
 actix-web = "4"
+actix-cors = "0.6.4"
 dotenvy = "0.15"
 async-trait = "0.1.68"
 serde = { version = "1.0", features = ["derive"] }
