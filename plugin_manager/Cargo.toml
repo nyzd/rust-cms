@@ -1,0 +1,9 @@
+[package]
+name = "plugin_manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+wasmer = "3.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
