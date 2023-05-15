@@ -27,7 +27,6 @@ pub async fn verify<'a>(
     let conn = db_conn.get_ref();
 
     // Get the verification with code
-
     let Ok(Some(verification)) = EmailVerificationEntitiy::find()
         .filter(email_verification::Column::VerificationHash.eq(req_code))
         .one(conn).await else {
@@ -38,16 +37,7 @@ pub async fn verify<'a>(
     // Its been to long when verification code exists
     if verification.verified {
         return Err(Expired("This Verification code is already verified".to_string()));
-    } else {
-        // Now we must expire the verification code
-        // we used it
-        let mut verification: ActiveVerificationcode = verification.clone().into();
-
-        verification.verified = Set(true);
-        let _ = verification.update(conn).await else {
-            return Err(InternalError);
-        };
-    }
+    } 
 
     let current_time = current_time_stamp();
 
@@ -56,16 +46,27 @@ pub async fn verify<'a>(
         return Err(Expired("This Verification code is expired".to_string()));
     }
 
-    // check if user exists or we must create a new user?
-    let user = UserEntity::find()
-        .filter(user::Column::Email.eq(verification.clone().email))
-        .one(conn).await.unwrap();
+    // Now we must expire the verification code
+    // we used it
+    let mut verification_clone: ActiveVerificationcode = verification.clone().into();
 
-    // random chars for username
-    let random_username = random_string(RANDOM_USERNAME_LENGTH);
-    let uuid = generate_uuid();
+    verification_clone.verified = Set(true);
+    let _ = verification_clone.update(conn).await else {
+        return Err(InternalError);
+    };
+
+    // check if user exists or we must create a new user?
+    let Ok(user) = UserEntity::find()
+        .filter(user::Column::Email.eq(verification.clone().email))
+        .one(conn).await else {
+            return Err(InternalError);
+        };
 
     if user == None {
+        // random chars for username
+        let random_username = random_string(RANDOM_USERNAME_LENGTH);
+        let uuid = generate_uuid();
+
         let new_user = UserModel {
             name: Set(format!("u{}", random_username)),
             email: Set(verification.clone().email),

@@ -36,13 +36,20 @@ pub async fn get_token(
         };
 
     if !verification.verified {
-        return Err(NotFound("This verification is not verifyed".to_string()));
+        return Err(Auth("This verification is not verifyed".to_string()));
     }
 
     // Check if the verification code is not expired or
     // Its been to long when verification code exists
     if verification.used {
         return Err(Used("This Verification code is already used".to_string()));
+    }
+
+    let current_time = current_time_stamp();
+
+    // Is verification code is expired
+    if current_time as i64 - verification.clone().created_at.timestamp() >= 70 {
+        return Err(Expired("This Verification code is expired".to_string()));
     }
 
     // Now we must expire the verification code
@@ -53,13 +60,6 @@ pub async fn get_token(
     let _ = verification_clone.update(conn).await else {
         return Err(InternalError);
     };
-
-    let current_time = current_time_stamp();
-
-    // Is verification code is expired
-    if current_time as i64 - verification.clone().created_at.timestamp() >= 70 {
-        return Err(Expired("This Verification code is expired".to_string()));
-    }
 
     // Now we must create a token and return it
     // Some salts

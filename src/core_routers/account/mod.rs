@@ -1,6 +1,7 @@
 pub mod verify;
 pub mod get_token;
 pub mod send_verification;
+pub mod profile;
 
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;

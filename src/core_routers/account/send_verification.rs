@@ -1,13 +1,13 @@
 use crate::error::router_error::RouterError;
 use actix_web::web;
-use entity::email_verification::{ActiveModel as EmailVerificationModel, Entity as EmailVerificationEntitiy};
+use entity::email_verification::{self, ActiveModel as EmailVerificationModel, Entity as EmailVerificationEntitiy, Model as VerificationModel};
 use sea_orm::ActiveValue::Set;
-use sea_orm::{DatabaseConnection, EntityTrait};
+use sea_orm::{DatabaseConnection, EntityTrait, TryIntoModel, ActiveModelTrait, QueryOrder, QuerySelect};
 use hash::{random_bytes, hash_bytes};
 use serde::Deserialize;
 use crate::EmailManager;
 use std::env;
-use super::generate_uuid;
+use super::{generate_uuid, current_time_stamp};
 
 #[derive(Clone, Debug)]
 struct VerificationInfo {
@@ -33,13 +33,13 @@ async fn new_verification(
         ..Default::default()
     };
 
-    let res = EmailVerificationEntitiy::insert(new_verification)
-        .exec(db_conn)
-        .await.unwrap();
-    
+    let Ok(res) = new_verification.insert(db_conn).await else {
+            return Err(RouterError::InternalError);
+        };
+
     Ok(VerificationInfo {
         hash,
-        uuid
+        uuid,
     })
 }
 
@@ -54,12 +54,28 @@ pub async fn create_verification_url_debug(
     Ok(format!("/verify/{}", new_verification_info.hash))
 }
 
-// TODO: check if already code sended
 pub async fn send_verification_url(
     emailer: web::Data<EmailManager>,
     db_conn: &DatabaseConnection,
     user_email: String
 ) -> Result<String, RouterError> {
+    use crate::error::router_error::RouterError::*;
+
+    let Ok(last_verification) = EmailVerificationEntitiy::find()
+        .order_by_desc(email_verification::Column::CreatedAt)
+        .limit(1)
+        .one(db_conn).await else {
+            return Err(InternalError);
+        };
+
+    let current_time = current_time_stamp();
+
+    if last_verification != None {
+        if current_time as i64 - last_verification.unwrap().created_at.timestamp() <= 20 {
+            return Err(Used("Verification is already sended please wait and try again".to_string()));
+        }
+    }
+
     let new_verification_info = new_verification(&db_conn, &user_email).await?;
 
     // Now send email to user 
@@ -74,7 +90,7 @@ pub async fn send_verification_url(
         "Verification Link",
         body
     ).await else {
-        return Err(RouterError::InternalError);
+        return Err(InternalError);
     };
 
     Ok(new_verification_info.uuid)
