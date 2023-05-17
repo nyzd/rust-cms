@@ -3,16 +3,16 @@ use std::{
     fs::{canonicalize, File},
     io::Read,
     path::PathBuf,
-    vec,
 };
 
+use left_right::{Absorb, ReadHandle, ReadHandleFactory, WriteHandle};
 use serde::Deserialize;
 
 use crate::{config::PluginConfig, wasm::WasmPlugin};
 
 /// The plugin metadata that will
 /// mostly shown to the user
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Default, Clone, Debug, Deserialize)]
 pub struct PluginMetadata {
     pub name: String,
     pub version: String,
@@ -69,7 +69,7 @@ pub trait Plugin<T> {
     fn routers(&self) -> Vec<String>;
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PluginBuilder {
     metadata: PluginMetadata,
     source: String,
@@ -121,34 +121,104 @@ pub enum ManagerError {
     Config(String),
 }
 
+/// ManagerOperations
+/// log for left-write
+#[derive(Clone, Debug)]
+pub enum SystemOp<T>
+where
+    T: Plugin<WasmPlugin>,
+{
+    New(String, T),
+    Remove(String),
+}
+
 /// This is a manager for our plugins
 /// for example for gathering the plugins data
 /// or plugin source
 /// or updating the plugin
 /// install and delete the plugin
-#[derive(Clone, Debug)]
-pub struct PluginManager<T> {
+#[derive(Default, Debug, Clone)]
+pub struct PluginSystem<T> {
     plugins: HashMap<String, T>,
 }
 
-impl<T> PluginManager<T> {
-    /// Creates and returns the new PluginManager
-    pub fn new() -> Self {
-        Self {
-            plugins: HashMap::new(),
-        }
+impl<T> PluginSystem<T>
+where
+    T: Plugin<WasmPlugin> + Clone + Default,
+{
+    pub fn get_left_right() -> (
+        WriteHandle<PluginSystem<T>, SystemOp<T>>,
+        ReadHandle<PluginSystem<T>>,
+    ) {
+        left_right::new::<PluginSystem<T>, SystemOp<T>>()
     }
 }
 
-impl PluginManager<PluginBuilder> {
+impl<T> Absorb<SystemOp<T>> for PluginSystem<T>
+where
+    T: Plugin<WasmPlugin> + Clone,
+{
+    fn absorb_first(&mut self, operation: &mut SystemOp<T>, _: &Self) {
+        match operation {
+            SystemOp::New(plugin_name, plugin) => {
+                self.plugins.insert(plugin_name.to_owned(), plugin.clone());
+            }
+
+            SystemOp::Remove(plugin_name) => {
+                self.plugins.remove(&plugin_name.to_owned());
+            }
+        }
+    }
+
+    fn sync_with(&mut self, first: &Self) {
+        *self = first.clone();
+    }
+
+    fn drop_first(self: Box<Self>) {}
+}
+
+#[derive(Debug)]
+pub struct PluginSystemWriter<T: Plugin<WasmPlugin> + Clone>(
+    pub WriteHandle<PluginSystem<T>, SystemOp<T>>,
+);
+
+impl<T> PluginSystemWriter<T>
+where
+    T: Plugin<WasmPlugin> + Clone,
+{
+    /// Adds the new plugin to the plugins list(map)
+    pub fn add(&mut self, plugin: T) -> &Self {
+        self.0.append(SystemOp::New(plugin.metadata().name, plugin));
+
+        self
+    }
+
+    /// Removes the plugin from the plugins list(map)
+    pub fn remove(&mut self, plugin: T) -> &Self {
+        // TODO: handle the option
+        self.0.append(SystemOp::Remove(plugin.metadata().name));
+
+        self
+    }
+
+    /// Commits the changes
+    pub fn publish(&mut self) -> &Self {
+        self.0.publish();
+
+        self
+    }
+}
+
+impl PluginSystemWriter<PluginBuilder> {
     pub fn add_from_config(
         &mut self,
         config_path: PathBuf,
         config: PluginConfig<PluginMetadata>,
-    ) -> Result<&mut Self, ManagerError> {
+    ) -> Result<(), ManagerError> {
         // Get source of the plugin from path that is defined in the config
         // TODO: this may has a blocking issue
         let Ok(mut file)= File::open(
+            // TODO: is this working ?
             canonicalize(
                 PathBuf::from(format!("{}{}", config_path.to_string_lossy(), config.wasm_path.to_string_lossy())
             )
@@ -164,43 +234,25 @@ impl PluginManager<PluginBuilder> {
         // Build the plugin with pluginBuilder
         let new_plugin = PluginBuilder::new(config.metadata, file_content);
 
-        self.plugins.insert(new_plugin.metadata().name, new_plugin);
+        self.add(new_plugin);
 
-        Ok(self)
+        Ok(())
     }
 }
 
-impl<T> PluginManager<T>
+pub struct PluginSystemReader<T: Plugin<WasmPlugin> + Clone>(
+    // We need to use the readhandlefactory bequase we need to share the data
+    // across multiple threads
+    pub ReadHandleFactory<PluginSystem<T>>,
+);
+
+impl<T> PluginSystemReader<T>
 where
-    T: Plugin<WasmPlugin>,
+    T: Plugin<WasmPlugin> + Clone,
 {
-    /// Adds the new plugin to the plugins list(map)
-    pub fn add(&mut self, plugin: T) -> &mut Self {
-        // TODO: handle the option
-        self.plugins.insert(plugin.metadata().name, plugin);
-
-        self
-    }
-
-    /// Removes the plugin from the plugins list(map)
-    pub fn remove(&mut self, plugin: T) -> &mut Self {
-        // TODO: handle the option
-        self.plugins.remove(&plugin.metadata().name);
-
-        self
-    }
-
-    /// Returns the list of the plugins on mem
-    pub fn get_the_plugins_list(&self) -> Vec<PluginMetadata> {
-        self.plugins
-            .values()
-            .into_iter()
-            .map(|m| m.metadata())
-            .collect::<Vec<PluginMetadata>>()
-    }
-
-    /// Finds the plugin from given name
-    pub fn get_plugin(&self, name: String) -> Option<&T> {
-        self.plugins.get(&name)
+    pub fn get(&self, name: &String) -> Option<T> {
+        self.0.handle().enter().unwrap().plugins.get(name).cloned()
     }
 }
+
+pub type BuilderReader = PluginSystemReader<PluginBuilder>;
