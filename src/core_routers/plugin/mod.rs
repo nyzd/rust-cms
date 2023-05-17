@@ -1,1 +1,1 @@
-pub async fn get_plugin() {}
+pub mod run_plugin;
