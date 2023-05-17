@@ -1,7 +1,5 @@
 use std::env;
 use std::io;
-use std::println;
-use std::vec;
 
 mod core_routers;
 mod email;
@@ -10,21 +8,20 @@ mod middlewares;
 
 pub use middlewares::token_checker::AuthResult;
 use plugin_manager;
-use plugin_manager::config::PluginConfig;
-use plugin_manager::manager::Plugin;
-use plugin_manager::manager::PluginBuilder;
-use plugin_manager::manager::PluginManager;
-use plugin_manager::manager::PluginMetadata;
+use plugin_manager::manager::PluginSystem;
+use plugin_manager::manager::{
+    PluginBuilder, PluginMetadata, PluginSystemReader, PluginSystemWriter,
+};
 
 use crate::email::email::EmailManager;
-use core_routers::account::{get_token, profile, send_verification, verify};
-use middlewares::token_checker::TokenValidator;
-
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
 use auth::token::TokenAuth;
+use core_routers::account::{get_token, profile, send_verification, verify};
+use core_routers::plugin::run_plugin;
 use dotenvy::dotenv;
 use lettre::transport::smtp::authentication::Credentials;
+use middlewares::token_checker::TokenValidator;
 use migration::{Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection, DbErr};
 
@@ -54,7 +51,7 @@ async fn establish_db_connection() -> Result<DatabaseConnection, DbErr> {
 }
 
 // THIS IS JUST FOR TEST
-fn init_hello_world(p_manager: &mut PluginManager<PluginBuilder>) {
+fn init_hello_world(s_writer: &mut PluginSystemWriter<PluginBuilder>) {
     let inc = include_str!("../builtin_plugins/hello_world/hello_world.wasm");
 
     let pg = PluginBuilder::new(
@@ -65,7 +62,8 @@ fn init_hello_world(p_manager: &mut PluginManager<PluginBuilder>) {
         inc.to_string(),
     );
 
-    p_manager.add(pg);
+    s_writer.add(pg);
+    s_writer.publish();
 }
 
 #[actix_web::main]
@@ -81,10 +79,17 @@ async fn main() -> io::Result<()> {
     let emailer = create_emailer();
     let token_validator = TokenValidator::new(database_conn.clone());
     let token_auth = TokenAuth::new(token_validator.clone());
+    let (write, read) = PluginSystem::get_left_right();
+    let (mut w, r) = (
+        PluginSystemWriter(write),
+        // We use here the factory
+        // for multi thread share
+        PluginSystemReader(read.factory()),
+    );
+    init_hello_world(&mut w);
 
-    let mut p_manager: PluginManager<PluginBuilder> = PluginManager::new();
-
-    init_hello_world(&mut p_manager);
+    // Create the data
+    let data: web::Data<PluginSystemReader<PluginBuilder>> = web::Data::new(r);
 
     HttpServer::new(move || {
         // Set All to the cors
@@ -94,6 +99,7 @@ async fn main() -> io::Result<()> {
             .wrap(cors)
             .app_data(web::Data::new(database_conn.clone()))
             .app_data(web::Data::new(emailer.clone()))
+            .app_data(data.clone())
             .service(
                 web::scope("/account")
                     .route(
@@ -109,6 +115,10 @@ async fn main() -> io::Result<()> {
                         "/profile",
                         web::get().to(profile::get_profile).wrap(token_auth.clone()),
                     ),
+            )
+            .service(
+                web::scope("/plugin")
+                    .route("/call", web::post().to(run_plugin::run_plugin_function)),
             )
     })
     .bind(("127.0.0.1", 8080))?
