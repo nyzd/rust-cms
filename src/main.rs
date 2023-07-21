@@ -1,5 +1,7 @@
 use std::env;
 use std::io;
+use std::io::Read;
+use std::path::PathBuf;
 
 mod core_routers;
 mod email;
@@ -8,10 +10,10 @@ mod middlewares;
 
 pub use middlewares::token_checker::AuthResult;
 use plugin_manager;
+use plugin_manager::config::PluginConfig;
+use plugin_manager::manager::PluginMetadata;
 use plugin_manager::manager::PluginSystem;
-use plugin_manager::manager::{
-    PluginBuilder, PluginMetadata, PluginSystemReader, PluginSystemWriter,
-};
+use plugin_manager::manager::{PluginBuilder, PluginSystemReader, PluginSystemWriter};
 
 use crate::email::email::EmailManager;
 use actix_cors::Cors;
@@ -50,20 +52,19 @@ async fn establish_db_connection() -> Result<DatabaseConnection, DbErr> {
     Ok(db)
 }
 
-// THIS IS JUST FOR TEST
-fn init_hello_world(s_writer: &mut PluginSystemWriter<PluginBuilder>) {
-    let inc = include_str!("../builtin_plugins/hello_world/hello_world.wasm");
-
-    let pg = PluginBuilder::new(
-        PluginMetadata {
-            name: "hello-world".to_string(),
-            version: "0.0.1".to_string(),
-        },
-        inc.to_string(),
+pub fn init_plugin_system() -> (
+    PluginSystemWriter<PluginBuilder>,
+    PluginSystemReader<PluginBuilder>,
+) {
+    let (write, read) = PluginSystem::get_left_right();
+    let (w, r) = (
+        PluginSystemWriter(write),
+        // We use here the factory
+        // for multi thread share
+        PluginSystemReader(read.factory()),
     );
 
-    s_writer.add(pg);
-    s_writer.publish();
+    return (w, r);
 }
 
 #[actix_web::main]
@@ -79,14 +80,17 @@ async fn main() -> io::Result<()> {
     let emailer = create_emailer();
     let token_validator = TokenValidator::new(database_conn.clone());
     let token_auth = TokenAuth::new(token_validator.clone());
-    let (write, read) = PluginSystem::get_left_right();
-    let (mut w, r) = (
-        PluginSystemWriter(write),
-        // We use here the factory
-        // for multi thread share
-        PluginSystemReader(read.factory()),
-    );
-    init_hello_world(&mut w);
+
+    let (mut w, r) = init_plugin_system();
+    let inc = include_bytes!("../builtin_plugins/hello-world/hello.wasm");
+    let p_conf =
+        PluginConfig::from_file(include_bytes!("../builtin_plugins/hello-world/config.json"))
+        .unwrap();
+
+    w.add_from_config(inc.bytes().map(|b| b.unwrap()).collect::<Vec<u8>>(), p_conf)
+        .unwrap();
+
+    w.publish();
 
     // Create the data
     let data: web::Data<PluginSystemReader<PluginBuilder>> = web::Data::new(r);
@@ -124,4 +128,40 @@ async fn main() -> io::Result<()> {
     .bind(("127.0.0.1", 8080))?
     .run()
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use plugin_manager::manager::{Plugin, PluginBuilder, PluginMetadata};
+
+    #[test]
+    fn plugin_test() {
+        let inc = include_bytes!("../builtin_plugins/hello-world/hello.wasm");
+        let plugin = PluginBuilder::new(
+            PluginMetadata {
+                ..Default::default()
+            },
+            inc.to_vec(),
+        );
+
+        let mut wasm = plugin.build().unwrap();
+        let func = wasm.instance.exports.get_function("hello").unwrap();
+        let memory = wasm.instance.exports.get_memory("memory").unwrap();
+
+        let memview = memory.view(&wasm.store);
+
+        let mut buf: Vec<u8> = memview.copy_to_vec().unwrap();
+        buf.retain(|i| i != &0u8);
+
+        let _res = match func.call(&mut wasm.store, &[]).unwrap().get(0).unwrap() {
+            plugin_manager::wasmer::Value::I32(n) => n,
+
+            _ => panic!("Expected i32"),
+        };
+
+        let mut string = buf.into_iter();
+        while let Some(data) = string.next() {
+            print!("{}", char::from(data));
+        }
+    }
 }
