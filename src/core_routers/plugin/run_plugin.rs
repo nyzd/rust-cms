@@ -1,5 +1,9 @@
 use actix_web::web;
-use plugin_manager::manager::{BuilderReader, Plugin};
+use plugin_manager::{
+    config::PluginAbiParamType,
+    manager::{BuilderReader, Plugin},
+    wasmer::{imports, Exports, Extern, Function},
+};
 use serde::Deserialize;
 
 use crate::error::router_error::RouterError;
@@ -18,7 +22,7 @@ pub struct PluginCall {
 pub async fn run_plugin_function(
     plugin_reader: web::Data<BuilderReader>,
     req_json: web::Json<PluginCall>,
-) -> Result<web::Json<Vec<String>>, RouterError> {
+) -> Result<web::Json<String>, RouterError> {
     // Get the reader
     let reader = plugin_reader.into_inner();
     let req_json = req_json.into_inner();
@@ -27,14 +31,19 @@ pub async fn run_plugin_function(
         return Err(RouterError::NotFound(format!("Plugin name {} not found!", &req_json.name)));
     };
 
-    let Ok(mut plugin_wasm) = plugin.build() else {
-        return Err(RouterError::InternalError);
+    let mut plugin_wasm = plugin.build().unwrap();
+    let imports = imports! {
+        "cms" => {
+            "log" => Function::new_typed(&mut plugin_wasm.store, || println!("HAHA")),
+        }
     };
 
-    if plugin_wasm
+    plugin_wasm.init_instance(imports).unwrap();
+
+    if !plugin_wasm
         .export_names()
         .into_iter()
-        .any(|i| i != req_json.function_name)
+        .any(|i| i == req_json.function_name)
     {
         return Err(RouterError::NotFound(format!(
             "Function name {} not found!",
@@ -42,17 +51,45 @@ pub async fn run_plugin_function(
         )));
     }
 
-    // TODO: return error with the description
-    let Ok(func_result)= plugin_wasm.run_func(req_json.function_name, vec![]) else {
-        return Err(RouterError::InternalError);
-    };
+    let instance = plugin_wasm.instance.clone().unwrap();
 
-    // TODO: return the better result
-    //       perefered type is a json result
-    let result = func_result
+    let function = instance
+        .exports
+        .get_function(&req_json.function_name)
+        .unwrap();
+
+    let function_result = function.call(&mut plugin_wasm.store, &[]).unwrap();
+
+    let result = match plugin
+        .abi()
+        .functions
         .into_iter()
-        .map(|val| val.to_string())
-        .collect::<Vec<String>>();
+        .find(|f| f.name == req_json.function_name)
+        .unwrap()
+        .result
+        .ty
+    {
+        PluginAbiParamType::String => {
+            let memory = instance
+                .exports
+                .get_memory("memory")
+                .unwrap();
+
+            // Not a good way
+            let buf = memory.view(&mut plugin_wasm.store).copy_to_vec().unwrap();
+
+            let buf_iter = buf
+                .into_iter()
+                .skip(function_result[0].unwrap_i32() as usize)
+                .take_while(|n| *n != 0)
+                //.map(|n| char::from(n))
+                .collect::<Vec<u8>>();
+
+            String::from_utf8(buf_iter).unwrap()
+        }
+
+        PluginAbiParamType::Number => function_result[0].to_string(),
+    };
 
     Ok(web::Json(result))
 }
