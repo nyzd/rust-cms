@@ -1,4 +1,4 @@
-use wasmer::{imports, Instance, Module, Store, Value};
+use wasmer::{Exports, Imports, Instance, Module, Store};
 
 #[derive(Debug)]
 pub enum WasmError {
@@ -12,59 +12,49 @@ pub enum WasmError {
 /// and build and return the Plugin
 #[derive(Debug)]
 pub struct WasmPlugin {
-    store: Store,
-    instance: Instance,
+    pub source: Vec<u8>,
+    pub store: Store,
+    pub instance: Option<Instance>,
 }
 
 impl WasmPlugin {
     /// Creates a new wasm plugin object with a store and instance
-    pub fn new(source: String) -> Result<Self, WasmError> {
-        let mut store = Store::default();
-        let Ok(module) = Module::new(&store, &source) else {
+    pub fn new(source: Vec<u8>) -> Self {
+        let store = Store::default();
+
+        Self {
+            store,
+            source,
+            instance: None,
+        }
+    }
+
+    pub fn init_instance(&mut self, imports: Imports) -> Result<(), WasmError> {
+        let Ok(module) = Module::new(&self.store, self.source.clone()) else {
             return Err(WasmError::Compile("Cant Compile the wasm file!".to_string()));
         };
-        let import_object = imports! {};
-        // TODO: is it okey to use variable store and not the self.store ?
-        let Ok(instance) = Instance::new(&mut store, &module, &import_object) else {
-            return Err(WasmError::Instance("Cant create a instance!".to_string()));
-        };
 
-        Ok(Self { store, instance })
+        let instance = Instance::new(&mut self.store, &module, &imports).unwrap();
+        self.instance = Some(instance);
+
+        Ok(())
     }
 
     /// Returns the exports name
     pub fn export_names(&self) -> Vec<String> {
-        let exports = &self.instance.exports;
+        let exports = &self.instance.clone().unwrap().exports;
 
         exports
             .into_iter()
             .map(|(x, _y)| x.clone())
             .collect::<Vec<String>>()
     }
-
-    /// Runs the wasm function
-    pub fn run_func(
-        &mut self,
-        function_name: String,
-        params: Vec<Value>,
-    ) -> Result<Box<[Value]>, WasmError> {
-        let exports = &self.instance.exports;
-
-        let Ok(function) = exports.get_function(&function_name) else {
-            return Err(WasmError::Export(format!("Cant get the function {}", &function_name)));
-        };
-
-        let Ok(result) = function.call(&mut self.store, &params) else {
-            return Err(WasmError::Runtime(format!("Cant run the function {}", &function_name)));
-        };
-
-        Ok(result)
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::vec;
+
+    use wasmer::Value;
 
     use super::*;
 
@@ -78,13 +68,16 @@ mod tests {
         i32.add))"#
             .to_string();
 
-        let mut wasm_plugin = WasmPlugin::new(source).unwrap();
+        let mut wasm_plugin = WasmPlugin::new(&source.as_bytes().to_vec()).unwrap();
 
         assert_eq!(wasm_plugin.export_names(), vec!["add_one"]);
 
-        let result = wasm_plugin
-            .run_func("add_one".to_string(), vec![Value::I32(1)])
+        let function = wasm_plugin
+            .instance
+            .exports
+            .get_function("add_one")
             .unwrap();
+        let result = function.call(&mut wasm_plugin.store, &[]).unwrap();
 
         assert_eq!(result.get(0).unwrap(), &Value::I32(2));
     }

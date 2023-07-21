@@ -1,14 +1,13 @@
-use std::{
-    collections::HashMap,
-    fs::{canonicalize, File},
-    io::Read,
-    path::PathBuf,
-};
+use std::collections::HashMap;
 
 use left_right::{Absorb, ReadHandle, ReadHandleFactory, WriteHandle};
 use serde::Deserialize;
+use wasmer::Imports;
 
-use crate::{config::PluginConfig, wasm::WasmPlugin};
+use crate::{
+    config::{PluginAbi, PluginConfig},
+    wasm::WasmPlugin,
+};
 
 /// The plugin metadata that will
 /// mostly shown to the user
@@ -28,8 +27,10 @@ pub trait Plugin<T> {
     /// Metadata of the plugin
     fn metadata(&self) -> PluginMetadata;
 
+    fn abi(&self) -> PluginAbi;
+
     /// The wasm source of the plugin
-    fn source(&self) -> String;
+    fn source(&self) -> Vec<u8>;
 
     fn build(&self) -> Result<T, PluginError>;
 
@@ -69,25 +70,29 @@ pub trait Plugin<T> {
     fn routers(&self) -> Vec<String>;
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Default, Clone, Debug)]
 pub struct PluginBuilder {
-    metadata: PluginMetadata,
-    source: String,
+    config: PluginConfig<PluginMetadata>,
+    source: Vec<u8>,
 }
 
 impl PluginBuilder {
     /// Creates a new PluginBuilder
-    pub fn new(metadata: PluginMetadata, source: String) -> Self {
-        Self { metadata, source }
+    pub fn new(config: PluginConfig<PluginMetadata>, source: Vec<u8>) -> Self {
+        Self { config, source }
     }
 }
 
 impl Plugin<WasmPlugin> for PluginBuilder {
     fn metadata(&self) -> PluginMetadata {
-        self.metadata.clone()
+        self.config.metadata.clone()
     }
 
-    fn source(&self) -> String {
+    fn abi(&self) -> PluginAbi {
+        self.config.abi.clone()
+    }
+
+    fn source(&self) -> Vec<u8> {
         self.source.clone()
     }
 
@@ -101,13 +106,7 @@ impl Plugin<WasmPlugin> for PluginBuilder {
 
     fn build(&self) -> Result<WasmPlugin, PluginError> {
         // Create a new WasmPlugin
-        let Ok(wasm_plugin) = WasmPlugin::new(self.source()) else {
-            return Err(
-                PluginError::Build(
-                    format!("Cant build plugin {} from the source", self.metadata().name)
-                )
-            );
-        };
+        let wasm_plugin = WasmPlugin::new(self.source());
 
         Ok(wasm_plugin)
     }
@@ -212,27 +211,11 @@ where
 impl PluginSystemWriter<PluginBuilder> {
     pub fn add_from_config(
         &mut self,
-        config_path: PathBuf,
+        wasm_as_bytes: Vec<u8>,
         config: PluginConfig<PluginMetadata>,
     ) -> Result<(), ManagerError> {
-        // Get source of the plugin from path that is defined in the config
-        // TODO: this may has a blocking issue
-        let Ok(mut file)= File::open(
-            // TODO: is this working ?
-            canonicalize(
-                PathBuf::from(format!("{}{}", config_path.to_string_lossy(), config.wasm_path.to_string_lossy())
-            )
-        ).unwrap()) else {
-            return Err(ManagerError::Source("Cant open the source file!".to_string()))
-        };
-
-        let mut file_content = String::new();
-        let Ok(_reader) = file.read_to_string(&mut file_content) else {
-            return Err(ManagerError::Source("Cant read the source file!".to_string()))
-        };
-
         // Build the plugin with pluginBuilder
-        let new_plugin = PluginBuilder::new(config.metadata, file_content);
+        let new_plugin = PluginBuilder::new(config, wasm_as_bytes);
 
         self.add(new_plugin);
 
