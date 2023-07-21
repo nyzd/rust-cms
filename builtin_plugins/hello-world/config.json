@@ -1,0 +1,20 @@
+{
+    "name": "hello",
+    "version": "1.0.0",
+    "abi": {
+        "functions": [
+            {
+                "name": "hello",
+                "result": {
+                    "type": "string"
+                }
+            },
+            {
+                "name": "ok",
+                "result": {
+                    "type": "number"
+                }
+            }
+        ]
+    }
+}

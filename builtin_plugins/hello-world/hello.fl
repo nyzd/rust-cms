@@ -1,3 +1,13 @@
+external cms {
+    fn log();
+}
+
 export fn hello(): string {
     return "Hello World";
+}
+
+export fn ok(): i32 {
+    log();
+
+    return 69;
 }
