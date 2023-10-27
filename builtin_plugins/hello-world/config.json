@@ -14,6 +14,12 @@
                 "result": {
                     "type": "number"
                 }
+            },
+            {
+                "name": "component",
+                "result": {
+                    "type": "string"
+                }
             }
         ]
     }

@@ -2,7 +2,7 @@ use actix_web::web;
 use plugin_manager::{
     config::PluginAbiParamType,
     manager::{BuilderReader, Plugin},
-    wasmer::{imports, Exports, Extern, Function},
+    wasmer::{imports, Function},
 };
 use serde::Deserialize;
 
@@ -33,7 +33,7 @@ pub async fn run_plugin_function(
 
     let mut plugin_wasm = plugin.build().unwrap();
     let imports = imports! {
-        "cms" => {
+        "stdout" => {
             "log" => Function::new_typed(&mut plugin_wasm.store, || println!("HAHA")),
         }
     };
@@ -70,10 +70,7 @@ pub async fn run_plugin_function(
         .ty
     {
         PluginAbiParamType::String => {
-            let memory = instance
-                .exports
-                .get_memory("memory")
-                .unwrap();
+            let memory = instance.exports.get_memory("memory").unwrap();
 
             // Not a good way
             let buf = memory.view(&mut plugin_wasm.store).copy_to_vec().unwrap();

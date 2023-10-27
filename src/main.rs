@@ -1,7 +1,6 @@
 use std::env;
 use std::io;
 use std::io::Read;
-use std::path::PathBuf;
 
 mod core_routers;
 mod email;
@@ -11,7 +10,6 @@ mod middlewares;
 pub use middlewares::token_checker::AuthResult;
 use plugin_manager;
 use plugin_manager::config::PluginConfig;
-use plugin_manager::manager::PluginMetadata;
 use plugin_manager::manager::PluginSystem;
 use plugin_manager::manager::{PluginBuilder, PluginSystemReader, PluginSystemWriter};
 
@@ -71,11 +69,11 @@ pub fn init_plugin_system() -> (
 async fn main() -> io::Result<()> {
     let database_conn = establish_db_connection()
         .await
-        .expect("Cant Connect To the database");
+        .expect("Can't Connect To the database");
 
     Migrator::up(&database_conn, None)
         .await
-        .expect("Cant run the migrations");
+        .expect("Can't run the migrations");
 
     let emailer = create_emailer();
     let token_validator = TokenValidator::new(database_conn.clone());
@@ -83,9 +81,10 @@ async fn main() -> io::Result<()> {
 
     let (mut w, r) = init_plugin_system();
     let inc = include_bytes!("../builtin_plugins/hello-world/hello.wasm");
-    let p_conf =
-        PluginConfig::from_file(include_bytes!("../builtin_plugins/hello-world/config.json"))
-        .unwrap();
+    let p_conf = PluginConfig::try_from(
+        include_bytes!("../builtin_plugins/hello-world/config.json").to_vec(),
+    )
+    .unwrap();
 
     w.add_from_config(inc.bytes().map(|b| b.unwrap()).collect::<Vec<u8>>(), p_conf)
         .unwrap();

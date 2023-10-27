@@ -38,12 +38,13 @@ pub struct PluginConfig<T> {
     pub abi: PluginAbi,
 }
 
-impl<T> PluginConfig<T>
+impl<T> TryFrom<Vec<u8>> for PluginConfig<T>
 where
     T: for<'a> Deserialize<'a>,
 {
-    pub fn from_file(bytes: &[u8]) -> Result<Self, ManagerError> {
-        let Ok(config) = serde_json::from_slice::<PluginConfig<T>>(bytes) else {
+    type Error = ManagerError;
+    fn try_from(bytes: Vec<u8>) -> Result<Self, Self::Error> {
+        let Ok(config) = serde_json::from_slice::<PluginConfig<T>>(&bytes) else {
             return Err(ManagerError::Config("Cant parse the config file as json!".to_string()))
         };
 
